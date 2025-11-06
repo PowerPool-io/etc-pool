@@ -64,6 +64,7 @@ func NewProxy(cfg *Config, backend *storage.RedisClient) *ProxyServer {
 
 	proxy := &ProxyServer{config: cfg, backend: backend, policy: policy}
 	proxy.diff = util.GetTargetHex(cfg.Proxy.Difficulty)
+	proxy.stratum_diff = int64(cfg.Proxy.Difficulty / 4295032833)
 
 	proxy.upstreams = make([]*rpc.RPCClient, len(cfg.Upstream))
 	for i, v := range cfg.Upstream {
