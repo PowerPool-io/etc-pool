@@ -9,8 +9,11 @@ import (
 	"net"
 	"sync"
 	"time"
-
+	"fmt"
+	"strings"
 	"github.com/etclabscore/open-etc-pool/util"
+	"crypto/rand"
+    "encoding/hex"
 )
 
 const (
@@ -140,11 +143,39 @@ func (cs *Session) handleTCPMessage(s *ProxyServer, req *StratumReq) error {
 			log.Println("Malformed login params from", cs.ip)
 			return err
 		}
-		reply, errReply := s.handleLoginRPC(cs, params, req.Worker)
+		reply, errReply := s.handleLoginRPC(cs, params)
 		if errReply != nil {
 			return cs.sendTCPError(req.Id, errReply)
 		}
 		return cs.sendTCPResult(req.Id, reply)
+
+	case "mining.subscribe":
+		var params []string
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			log.Println("Malformed subscribe params from", cs.ip)
+			return err
+		}
+		reply, errReply := s.handleSubscribe(cs, params)
+		if errReply != nil {
+			return cs.sendTCPErrorStratum(req.Id, errReply)
+		}
+		if err := cs.sendTCPResultStratum(req.Id, reply); err != nil {
+		    return err
+		}
+		return cs.sendMethodStratum(nil, "mining.set_difficulty", []interface{}{float64(s.stratum_diff)})
+		
+
+	case "mining.authorize":
+		var params []string
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			log.Println("Malformed login params from", cs.ip)
+			return err
+		}
+		reply, errReply := s.handleLoginRPCStratum(cs, params)
+		if errReply != nil {
+			return cs.sendTCPErrorStratum(req.Id, errReply)
+		}
+		return cs.sendTCPResultStratum(req.Id, reply)
 
 	case "eth_getWork":
 		reply, errReply := s.handleGetWorkRPC(cs)
@@ -165,8 +196,65 @@ func (cs *Session) handleTCPMessage(s *ProxyServer, req *StratumReq) error {
 		}
 		return cs.sendTCPResult(req.Id, &reply)
 
+	case "mining.submit":
+	    var params []string
+	    if err := json.Unmarshal(req.Params, &params); err != nil {
+	        log.Println("Malformed mining.submit params from", cs.ip)
+	        return err
+	    }
+
+	    if len(params) < 3 {
+	        return cs.sendTCPError(req.Id, &ErrorReply{
+	            Code:    -1,
+	            Message: "Invalid mining.submit params",
+	        })
+	    }
+
+	    worker := params[0]
+	    
+	    jobID := params[1]
+	    minerNonce := params[2]
+
+	    if cs.stratum_lastHeaderHash == "" || cs.stratum_lastSeedHash == "" {
+	        return cs.sendTCPErrorStratum(req.Id, &ErrorReply{
+	            Code:    21,
+	            Message: "No active job for session",
+	        })
+	    }
+
+	    // ✅ Check for stale job
+	    if jobID != cs.stratum_lastJobID {
+	        log.Printf("Stale share from %s@%s: job=%s (expected %s)",
+	            worker, cs.ip, jobID, cs.stratum_lastJobID)
+	        return cs.sendTCPErrorStratum(req.Id, &ErrorReply{
+	            Code:    21,
+	            Message: "Stale share: job no longer valid",
+	        })
+	    }
+
+	    cleanNonce := minerNonce
+		if strings.HasPrefix(strings.ToLower(cleanNonce), "0x") {
+		    cleanNonce = cleanNonce[2:]
+		}
+
+		// Combine extranonce + nonce, always with 0x prefix
+		fullNonce := "0x" + cleanNonce + cs.extranonce
+
+	    // ✅ Prepare params for standard eth_submitWork handler
+	    // [nonce, headerHash, seedHash]
+	    shareParams := []string{fullNonce, cs.stratum_lastHeaderHash, cs.stratum_lastSeedHash}
+
+	    // ✅ Call existing share validation function
+	    reply, errReply := s.handleTCPSubmitRPCStratum(cs, cs.login, shareParams)
+	    if errReply != nil {
+	        return cs.sendTCPErrorStratum(req.Id, errReply)
+	    }
+
+	    // ✅ Return result to miner
+	    return cs.sendTCPResultStratum(req.Id, reply)
+
 	case "eth_submitHashrate":
-		return cs.sendTCPResult(req.Id, true)
+		return cs.sendTCPResultStratum(req.Id, true)
 
 	case "mining.ping":
 		var params []string
@@ -190,11 +278,105 @@ func (cs *Session) sendTCPResult(id json.RawMessage, result interface{}) error {
 	return cs.enc.Encode(&message)
 }
 
+func (cs *Session) sendTCPResultStratum(id json.RawMessage, result interface{}) error {
+	cs.Lock()
+	defer cs.Unlock()
+
+	message := JSONRpcResp{
+		Id:      id,
+		Error:   nil,
+		Result:  result,
+	}
+
+	return cs.enc.Encode(&message)
+}
+
+func (cs *Session) sendMethodStratum(id json.RawMessage, method string, params interface{}) error {
+	cs.Lock()
+	defer cs.Unlock()
+
+	msg := JSONRpcResp{
+		Method:  method,
+		Params:  params,
+		Id:      id, // usually nil for notifications
+	}
+
+	return cs.enc.Encode(&msg)
+}
+
+
+func (cs *Session) sendTCPErrorStratum(id json.RawMessage, reply *ErrorReply) error {
+	cs.Lock()
+	defer cs.Unlock()
+
+	if reply == nil {
+		return nil
+	}
+
+	// Stratum-style error: [int, string]
+	errorArray := []interface{}{reply.Code, reply.Message}
+
+	message := JSONRpcResp{
+		Id:      id,
+		Result: nil,
+		Error:   errorArray,
+	}
+
+	if err := cs.enc.Encode(&message); err != nil {
+		return err
+	}
+
+	return errors.New(fmt.Sprintf("%d: %s", reply.Code, reply.Message))
+}
+
 func (cs *Session) pushNewJob(result interface{}) error {
 	cs.Lock()
 	defer cs.Unlock()
 
-	message := JSONPushMessage{Version: "2.0", Result: result, Id: 0}
+	if cs.stratum_mode {
+		data, ok := result.([]string)
+		if !ok || len(data) < 2 {
+			return nil // invalid payload
+		}
+
+		headerHash := data[0]
+		seedHash := data[1]
+
+		// Generate new job ID (8 random bytes → 16 hex chars)
+		jobIDBytes := make([]byte, 8)
+		if _, err := rand.Read(jobIDBytes); err != nil {
+			return err
+		}
+		jobID := hex.EncodeToString(jobIDBytes)
+
+		// Store current job info for future share validation
+		cs.stratum_lastJobID = jobID
+		cs.stratum_lastHeaderHash = headerHash
+		cs.stratum_lastSeedHash = seedHash
+
+		// Build mining.notify payload
+		params := []interface{}{
+			jobID,
+			strings.TrimPrefix(seedHash, "0x"),
+			strings.TrimPrefix(headerHash, "0x"),
+			true,
+		}
+
+		message := JSONRpcResp{
+			Method:  "mining.notify",
+			Params:  params,
+			Id:      nil,
+		}
+
+		return cs.enc.Encode(&message)
+	}
+
+	// Default (ethproxy / getWork style)
+	message := JSONPushMessage{
+		Version: "2.0",
+		Result:  result,
+		Id:      0,
+	}
 	return cs.enc.Encode(&message)
 }
 
@@ -246,7 +428,7 @@ func (s *ProxyServer) broadcastNewJobs() {
 	}
 	s.sessionsMu.RUnlock()
 
-	log.Printf("Broadcasting new job to %v stratum miners", len(sessions))
+	log.Printf("Broadcasting new job to %v stratum miners2", len(sessions))
 
 	start := time.Now()
 	var wg sync.WaitGroup
@@ -260,7 +442,7 @@ func (s *ProxyServer) broadcastNewJobs() {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			if err := cs.pushNewJob(&reply); err != nil {
+			if err := cs.pushNewJob(reply); err != nil {
 				log.Printf("Job transmit error to %v@%v: %v", cs.login, cs.ip, err)
 				s.removeSession(cs)
 				cs.conn.Close()

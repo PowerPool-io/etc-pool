@@ -26,6 +26,7 @@ type ProxyServer struct {
 	upstreams          []*rpc.RPCClient
 	backend            *storage.RedisClient
 	diff               string
+	stratum_diff       int64
 	policy             *policy.PolicyServer
 	hashrateExpiration time.Duration
 	failsCount         int64
@@ -43,6 +44,13 @@ type Session struct {
 	enc          *json.Encoder
 	login        string
 	worker       string
+	stratum_mode bool
+	extranonce   string
+
+	stratum_lastJobID     string
+	stratum_lastHeaderHash string
+	stratum_lastSeedHash   string
+
 	lastActivity time.Time
 	lastPing     time.Time
 	pingTimeout  time.Duration
@@ -231,6 +239,7 @@ func (cs *Session) handleMessage(s *ProxyServer, r *http.Request, req *JSONRpcRe
 	}
 
 	switch req.Method {
+
 	case "eth_getWork":
 		reply, errReply := s.handleGetWorkRPC(cs)
 		if errReply != nil {

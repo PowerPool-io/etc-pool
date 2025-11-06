@@ -23,9 +23,11 @@ type JSONPushMessage struct {
 
 type JSONRpcResp struct {
 	Id      json.RawMessage `json:"id"`
-	Version string          `json:"jsonrpc"`
-	Result  interface{}     `json:"result"`
-	Error   interface{}     `json:"error,omitempty"`
+	Version string          `json:"jsonrpc,omitempty"`
+	Result  interface{}     `json:"result,omitempty"`
+	Error   interface{}     `json:"error"`
+	Method  string          `json:"method,omitempty"`
+	Params  interface{}     `json:"params,omitempty"`
 }
 
 type SubmitReply struct {

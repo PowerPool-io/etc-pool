@@ -30,6 +30,7 @@ func (s *ProxyServer) processShare(login, id, ip string, t *BlockTemplate, param
 	nonceHex := params[0]
 	hashNoNonce := params[1]
 	mixDigest := params[2]
+
 	nonce, _ := strconv.ParseUint(strings.Replace(nonceHex, "0x", "", -1), 16, 64)
 	shareDiff := s.config.Proxy.Difficulty
 
