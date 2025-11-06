@@ -125,10 +125,7 @@ func (r *RedisClient) WriteNodeState(id string, height uint64, diff *big.Int) er
 	now := util.MakeTimestamp() / 1000
 
 	_, err := tx.Exec(func() error {
-		tx.HSet(r.formatKey("nodes"), join(id, "name"), id)
-		tx.HSet(r.formatKey("nodes"), join(id, "height"), strconv.FormatUint(height, 10))
-		tx.HSet(r.formatKey("nodes"), join(id, "difficulty"), diff.String())
-		tx.HSet(r.formatKey("nodes"), join(id, "lastBeat"), strconv.FormatInt(now, 10))
+		
 		return nil
 	})
 	return err
@@ -183,7 +180,6 @@ func (r *RedisClient) WriteShare(login, id string, params []string, diff int64, 
 
 	_, err = tx.Exec(func() error {
 		r.writeShare(tx, ms, ts, login, id, diff, window)
-		tx.HIncrBy(r.formatKey("stats"), "roundShares", diff)
 		return nil
 	})
 	return false, err
@@ -206,12 +202,6 @@ func (r *RedisClient) WriteBlock(login, id string, params []string, diff, roundD
 
 	cmds, err := tx.Exec(func() error {
 		r.writeShare(tx, ms, ts, login, id, diff, window)
-		tx.HSet(r.formatKey("stats"), "lastBlockFound", strconv.FormatInt(ts, 10))
-		tx.HDel(r.formatKey("stats"), "roundShares")
-		tx.ZIncrBy(r.formatKey("finders"), 1, login)
-		tx.HIncrBy(r.formatKey("miners", login), "blocksFound", 1)
-		tx.Rename(r.formatKey("shares", "roundCurrent"), r.formatRound(int64(height), params[0]))
-		tx.HGetAllMap(r.formatRound(int64(height), params[0]))
 		return nil
 	})
 	if err != nil {
@@ -231,11 +221,7 @@ func (r *RedisClient) WriteBlock(login, id string, params []string, diff, roundD
 }
 
 func (r *RedisClient) writeShare(tx *redis.Multi, ms, ts int64, login, id string, diff int64, expire time.Duration) {
-	tx.HIncrBy(r.formatKey("shares", "roundCurrent"), login, diff)
-	tx.ZAdd(r.formatKey("hashrate"), redis.Z{Score: float64(ts), Member: join(diff, login, id, ms)})
-	tx.ZAdd(r.formatKey("hashrate", login), redis.Z{Score: float64(ts), Member: join(diff, id, ms)})
-	tx.Expire(r.formatKey("hashrate", login), expire) // Will delete hashrates for miners that gone
-	tx.HSet(r.formatKey("miners", login), "lastShare", strconv.FormatInt(ts, 10))
+	tx.HIncrBy("etc.0:0:accepted:"+strconv.FormatInt(ts, 10), login, diff)
 }
 
 func (r *RedisClient) formatKey(args ...interface{}) string {

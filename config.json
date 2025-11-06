@@ -22,7 +22,7 @@
 			"enabled": true,
 			"listen": "0.0.0.0:8008",
 			"timeout": "120s",
-			"maxConn": 8192
+			"maxConn": 65536
 		},
 
 		"policy": {
@@ -48,7 +48,7 @@
 	},
 
 	"api": {
-		"enabled": true,
+		"enabled": false,
 		"purgeOnly": false,
 		"purgeInterval": "10m",
 		"listen": "0.0.0.0:8080",
@@ -64,18 +64,18 @@
 	"upstream": [
 		{
 			"name": "main",
-			"url": "http://127.0.0.1:8545",
+			"url": "http://geth1:8545",
 			"timeout": "10s"
 		},
 		{
 			"name": "backup",
-			"url": "http://127.0.0.2:8545",
+			"url": "http://geth2:8545",
 			"timeout": "10s"
 		}
 	],
 
 	"redis": {
-		"endpoint": "127.0.0.1:6379",
+		"endpoint": "redis:6379",
 		"poolSize": 10,
 		"database": 0,
 		"password": ""
