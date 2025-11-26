@@ -122,8 +122,6 @@ func (r *RedisClient) WriteNodeState(id string, height uint64, diff *big.Int) er
 	tx := r.client.Multi()
 	defer tx.Close()
 
-	now := util.MakeTimestamp() / 1000
-
 	_, err := tx.Exec(func() error {
 		
 		return nil
@@ -193,12 +191,14 @@ func (r *RedisClient) WriteBadShare(login, id string, params []string, diff int6
 	ms := util.MakeTimestamp()
 	ts := ms / 1000
 
-	_, err = tx.Exec(func() error {
+	_, err := tx.Exec(func() error { // <-- FIXED (:= instead of =)
 		r.writeBadShare(tx, ms, ts, login, id, diff)
 		return nil
 	})
+
 	return false, err
 }
+
 
 
 func (r *RedisClient) WriteBlock(login, id string, params []string, diff, roundDiff int64, height uint64, window time.Duration) (bool, error) {
