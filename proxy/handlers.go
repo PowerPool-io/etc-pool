@@ -139,18 +139,15 @@ func (s *ProxyServer) handleTCPSubmitRPC(cs *Session, id string, params []string
 	ok = s.policy.ApplySharePolicy(cs.ip, !exist && validShare)
 
 	if exist {
-		return false, &ErrorReply{Code: 22, Message: "Duplicate share"}
+		return false, nil
 	}
 
 	if !validShare {
-		if !ok {
-			return false, &ErrorReply{Code: 23, Message: "Invalid share"}
-		}
 		return false, nil
 	}
 
 	if !ok {
-		return true, &ErrorReply{Code: -1, Message: "High rate of invalid shares"}
+		return true, nil
 	}
 	return true, nil
 }

@@ -37,6 +37,13 @@ func (s *ProxyServer) processShare(login, id, ip string, t *BlockTemplate, param
 	h, ok := t.headers[hashNoNonce]
 	if !ok {
 		log.Printf("Stale share from %v@%v", login, ip)
+		exist, err := s.backend.WriteBadShare(login, id, params, shareDiff)
+		if exist {
+			return true, false
+		}
+		if err != nil {
+			log.Println("Failed to insert share data into backend:", err)
+		}
 		return false, false
 	}
 
@@ -57,6 +64,15 @@ func (s *ProxyServer) processShare(login, id, ip string, t *BlockTemplate, param
 	}
 
 	if !hasher.Verify(share) {
+		log.Printf("Low diff share from %v@%v", login, ip)
+		exist, err := s.backend.WriteBadShare(login, id, params, shareDiff)
+		if exist {
+			return true, false
+		}
+		if err != nil {
+			log.Println("Failed to insert share data into backend:", err)
+		}
+
 		return false, false
 	}
 

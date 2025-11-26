@@ -185,6 +185,22 @@ func (r *RedisClient) WriteShare(login, id string, params []string, diff int64, 
 	return false, err
 }
 
+
+func (r *RedisClient) WriteBadShare(login, id string, params []string, diff int64) (bool, error) {
+	tx := r.client.Multi()
+	defer tx.Close()
+
+	ms := util.MakeTimestamp()
+	ts := ms / 1000
+
+	_, err = tx.Exec(func() error {
+		r.writeBadShare(tx, ms, ts, login, id, diff)
+		return nil
+	})
+	return false, err
+}
+
+
 func (r *RedisClient) WriteBlock(login, id string, params []string, diff, roundDiff int64, height uint64, window time.Duration) (bool, error) {
 	exist, err := r.checkPoWExist(height, params)
 	if err != nil {
@@ -222,6 +238,10 @@ func (r *RedisClient) WriteBlock(login, id string, params []string, diff, roundD
 
 func (r *RedisClient) writeShare(tx *redis.Multi, ms, ts int64, login, id string, diff int64, expire time.Duration) {
 	tx.HIncrBy("etc.0:0:accepted:"+strconv.FormatInt(ts, 10), login, diff)
+}
+
+func (r *RedisClient) writeBadShare(tx *redis.Multi, ms, ts int64, login, id string, diff int64) {
+	tx.HIncrBy("etc.0:0:stale:"+strconv.FormatInt(ts, 10), login, diff)
 }
 
 func (r *RedisClient) formatKey(args ...interface{}) string {

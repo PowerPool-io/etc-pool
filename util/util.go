@@ -5,9 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"time"
-
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 )
 
@@ -34,9 +33,10 @@ func MakeTimestamp() int64 {
 }
 
 func GetTargetHex(diff int64) string {
-	difficulty := big.NewInt(diff)
-	diff1 := new(big.Int).Div(pow256, difficulty)
-	return string(hexutil.Encode(diff1.Bytes()))
+    difficulty := big.NewInt(diff)
+    diff1 := new(big.Int).Div(pow256, difficulty)
+
+    return fmt.Sprintf("0x%064x", diff1) // 64 hex chars (32 bytes)
 }
 
 func TargetHexToDiff(targetHex string) *big.Int {
