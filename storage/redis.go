@@ -238,10 +238,14 @@ func (r *RedisClient) WriteBlock(login, id string, params []string, diff, roundD
 
 func (r *RedisClient) writeShare(tx *redis.Multi, ms, ts int64, login, id string, diff int64, expire time.Duration) {
 	tx.HIncrBy("etchash.0:0:accepted:"+strconv.FormatInt(ts, 10), login, diff)
+	tx.HIncrBy("etchash.0:0:accepted_ind:"+strconv.FormatInt(ts, 10), login, 1)
+	tx.HIncrBy("etchash.0:0:valid:"+strconv.FormatInt(ts, 10), login, diff)
+	tx.HIncrBy("etchash.0:0:valid_ind:"+strconv.FormatInt(ts, 10), login, 1)
 }
 
 func (r *RedisClient) writeBadShare(tx *redis.Multi, ms, ts int64, login, id string, diff int64) {
-	tx.HIncrBy("etchash.0:0:stale:"+strconv.FormatInt(ts, 10), login, diff)
+	tx.HIncrBy("etchash.0:stale:"+strconv.FormatInt(ts, 10), login, diff)
+	tx.HIncrBy("etchash.0:stale_ind:"+strconv.FormatInt(ts, 10), login, 1)
 }
 
 func (r *RedisClient) formatKey(args ...interface{}) string {
